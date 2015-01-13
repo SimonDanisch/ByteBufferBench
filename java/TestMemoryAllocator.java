@@ -1,0 +1,149 @@
+/*
+ * 
+ * Licensed under the Apache License, Version 2.0 (the "License");
+ * you may not use this file except in compliance with the License.
+ * You may obtain a copy of the License at
+ *
+ * http://www.apache.org/licenses/LICENSE-2.0
+ *
+ * Unless required by applicable law or agreed to in writing, software
+ * distributed under the License is distributed on an "AS IS" BASIS,
+ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ * See the License for the specific language governing permissions and
+ * limitations under the License.
+ */
+
+import java.util.concurrent.TimeUnit;
+import java.util.ArrayList;
+import java.util.List;
+import java.util.Collections;
+
+public class TestMemoryAllocator {
+
+    public static void main(String... args) {
+
+        if (args == null || args.length == 0) {
+            args = new String[]{Allocator.Type.OFFHEAP.name(), "5000000"};
+        }
+
+        final int nElements = Integer.valueOf(args[1]);
+        
+
+        final boolean randomAccess = true;
+
+        final int[] idx;
+        if (randomAccess) {
+            idx = new int[nElements];
+            for (int i = 0; i < nElements; i++) {
+                idx[i] = (int) (Math.random() * nElements);
+            }
+        } else {
+            idx = null;
+        }
+
+        final ObjectType[] types = new ObjectType[]{Allocator.allocate(Allocator.Type.valueOf(args[0]), nElements)};
+        int ONE_MILLION = 1000000;
+
+        final int len = types.length;
+
+        List<Double> writes = new ArrayList<Double>();
+        List<Double> reads  = new ArrayList<Double>();
+        List<Double> rreads = new ArrayList<Double>();
+
+        for (int x = 0; x < 100; x++) {
+            for (int n = 0; n < len; n++) {
+                final ObjectType t = types[n];
+
+                long writeStart = System.nanoTime();
+                int resWrite = write(t, nElements);
+                long totalWrite = System.nanoTime() - writeStart;
+
+                long readStart = System.nanoTime();
+                int resRead = read(t, nElements);
+                long totalRead = System.nanoTime() - readStart;
+
+                long rreadStart = System.nanoTime();
+                int rresRead = randomRead(t, nElements, idx);
+                long rtotalRead = System.nanoTime() - readStart;
+
+                writes.add(totalWrite*1d);
+                reads.add(totalRead*1d);
+                rreads.add(rtotalRead*1d);
+
+
+            }
+        }
+        double meanwrites = mean(writes);
+        double meanreads  = mean(reads);
+        double meanrreads = mean(rreads);
+
+        double maxwrites = Collections.max(writes);
+        double maxreads  = Collections.max(reads);
+        double maxrreads = Collections.max(rreads);
+
+        double minwrites = Collections.min(writes);
+        double minreads  = Collections.min(reads);
+        double minrreads = Collections.min(rreads);
+
+        System.out.println(String.format("\"%s\" => [", types[0].getClass().getName()));
+        System.out.println(String.format("\"Writes\" => %16s,",       (TimeUnit.SECONDS.toNanos(nElements) / meanwrites) / ONE_MILLION));
+        System.out.println(String.format("\"Reads\" => %16s,",        (TimeUnit.SECONDS.toNanos(nElements) / meanreads) / ONE_MILLION));
+        System.out.println(String.format("\"RandomReads\" => %16s,", (TimeUnit.SECONDS.toNanos(nElements) / meanrreads) / ONE_MILLION));
+
+        System.out.println(String.format("\"Writes Max\" => %16s,",       (TimeUnit.SECONDS.toNanos(nElements) / minwrites) / ONE_MILLION));
+        System.out.println(String.format("\"Reads Max\" => %16s,",        (TimeUnit.SECONDS.toNanos(nElements) / minreads) / ONE_MILLION));
+        System.out.println(String.format("\"RandomReads Max\" => %16s,", (TimeUnit.SECONDS.toNanos(nElements) / minrreads) / ONE_MILLION));
+
+        System.out.println(String.format("\"Writes Min\" => %16s,",       (TimeUnit.SECONDS.toNanos(nElements) / maxwrites) / ONE_MILLION));
+        System.out.println(String.format("\"Reads Min\" => %16s,",        (TimeUnit.SECONDS.toNanos(nElements) / maxreads) / ONE_MILLION));
+        System.out.println(String.format("\"RandomReads Min\" => %16s,", (TimeUnit.SECONDS.toNanos(nElements) / maxrreads) / ONE_MILLION));
+
+        System.out.println("],");
+    }
+    public static double mean(List <Double> marks) {
+      double sum = 0.0;
+      if(!marks.isEmpty()) {
+        for (double mark : marks) {
+            sum += mark;
+        }
+        return sum / marks.size();
+      }
+      return sum;
+    }
+
+    public static int write(ObjectType t, int items) {
+        int index = 0;
+        for (; index < items; index++) {
+            t.navigate(index);
+            t.setByte((byte) index);
+            t.setInt(index);
+            t.setLong(index);
+        }
+        return index;
+    }
+
+    public static int read(ObjectType t, int items) {
+        int sum = 0;
+
+        for (int index = 0; index < items; index++) {
+            t.navigate(index);
+
+            /* consume ie use all read values to avoid dead code elimination */
+            sum += t.getByte() + t.getInt() + (int) t.getLong();
+        }
+        return sum;
+    }
+
+    public static int randomRead(ObjectType t, int items, final int[] idx) {
+        int sum = 0;
+
+        for (int index = 0; index < items; index++) {
+            t.navigate(idx[index]);
+
+            /* consume ie use all read values to avoid dead code elimination */
+            sum += t.getByte() + t.getInt() + (int) t.getLong();
+        }
+        return sum;
+    }
+}
+
